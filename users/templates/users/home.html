@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <header class="blog-header py-3">
+
+      </div>
+    </header>
+
+  </div>
+  
+  <main class="container">
+    {% if request.user.is_authenticated %}
+    <a class="btn btn-primary" aria-current="page" href="{% url 'loans:create_contact' %}">+ Контакт</a>
+    <a class="btn btn-primary" aria-current="page" href="{% url 'loans:contacts_list' %}">список контактов</a>
+    <main>    
+      <div style="margin-top: 100px">
+          <div class="row align-items-md-stretch">
+            <div class="col-md-6">
+              <div class="h-100 p-5 text-white bg-dark rounded-3">
+                <h2>Взять  долг</h2>
+                <p> </p>
+                <a class="btn btn-outline-light" href="">Взять</a>
+                <a class="btn btn-outline-light" href="{% url 'loans:create_transaction' type='borrow' %}">Взять у контакта</a>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="h-100 p-5 bg-light border rounded-3">
+                <h2>Погасить долг</h2>
+                <p></p>
+                <a class="btn btn-outline-secondary" href="{% url 'loans:create_transaction' type='repay' %}">Погасить долг</a>
+              </div>
+            </div>
+          </div>
+      </div>
+      
+      <div style="margin-top: 100px">
+          <div class="row align-items-md-stretch">
+            <div class="col-md-6">
+              <div class="h-100 p-5 text-white bg-dark rounded-3">
+                <h2>Дать  в долг</h2>
+                <p></p>
+                <a class="btn btn-outline-light" href="">Дать</a>
+                <a class="btn btn-outline-light" href="{% url 'loans:create_transaction' type='lend' %}">Дать контакту</a>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="h-100 p-5 bg-light border rounded-3">
+                <h2>Получить погашение</h2>
+                <p></p>
+                <a class="btn btn-outline-secondary" href="{% url 'loans:create_transaction' type='receive' %}">Получить погашение</a>
+              </div>
+            </div>
+          </div>
+      </div>
+      
+      
+      
+          <footer class="pt-3 mt-4 text-muted border-top">
+            © 2021
+          </footer>
+        </div>
+      </main>
+    <div class="p-4 p-md-5 mb-4 text-white rounded bg-dark">
+      <div class="col-md-6 px-0">
+        <h1 class="display-4 fst-italic">На нашем сайте вы сможете управлять своими проектами</h1>
+      </div>
+
+    </div>
+    {% endif %}
+  </main>
+{% endblock %}
+  
+
+

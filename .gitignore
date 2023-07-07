@@ -1,0 +1,11 @@
+myenv/
+db.sqlite3
+*.pyc
+__pycache__/
+*.log
+.vscode/
+.idea/
+.handler-saves/
+.env
+.venv/
+.myvenv/
