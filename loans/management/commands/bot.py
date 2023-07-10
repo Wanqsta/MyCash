@@ -248,7 +248,7 @@ def handle_message (message):
             keyboard.add(credit_button)
             history_button = types.InlineKeyboardButton(text='📖 История транзакций', callback_data=f'{user.id}:transaction_history')
             keyboard.add(history_button)
-            statistik_button = types.InlineKeyboardButton(text='Статистика', callback_data=f'{user.id}:statistics')  
+            statistik_button = types.InlineKeyboardButton(text='📊  Статистика', callback_data=f'{user.id}:statistics')  
             keyboard.add(statistik_button)
             bot.send_message(message.chat.id, 'Дополнительные действия:', reply_markup=keyboard)
 
