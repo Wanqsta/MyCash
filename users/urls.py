@@ -1,4 +1,3 @@
-from os import login_tty
 from django.urls import path
 from .views import home, signup, login_view
 from django.urls import path
