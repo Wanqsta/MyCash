@@ -5,6 +5,15 @@ from django.core.management.base import BaseCommand
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db.models import Sum
+from users.models import User
+from django.contrib.auth.models import User
+
+
+from loans.models import User, Transaction
+
+
+
 
 
 
@@ -94,8 +103,10 @@ def handle_command1(message):
         # is_logged_in = user.is_logged_in 
         # if is_logged_in:
         #     bot.send_message(message.chat.id, "Вы уже вошли в систему.", reply_markup=main_keyboard())
+        
 
 user_states = {}
+
 
 def get_user_state(chat_id):
     return user_states.get(chat_id)
@@ -237,6 +248,8 @@ def handle_message (message):
             keyboard.add(credit_button)
             history_button = types.InlineKeyboardButton(text='📖 История транзакций', callback_data=f'{user.id}:transaction_history')
             keyboard.add(history_button)
+            statistik_button = types.InlineKeyboardButton(text='Статистика', callback_data=f'{user.id}:statistics')  
+            keyboard.add(statistik_button)
             bot.send_message(message.chat.id, 'Дополнительные действия:', reply_markup=keyboard)
 
         if message.text == '🔍 Быстрый поиск':
@@ -252,6 +265,9 @@ def handle_message (message):
             bot.send_message(message.chat.id, 'Вы перешли в раздел 🔍 Быстрый поиск', reply_markup=keyboard)
     except User.DoesNotExist:
         bot.send_message(message.chat.id, "Вы не авторизованы")
+     
+
+
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
@@ -259,7 +275,9 @@ def handle_callback(call):
     contact_id = callback_data[0]
     action = callback_data[1]
     user_id = call.message.chat.id
+    print (call.data)
 
+    
     if action == 'borrow':
         bot.send_message(call.message.chat.id, 'Введите сумму займа:')
         bot.register_next_step_handler(call.message, handle_amount_credit, contact_id, 'borrow', 'долг', 'credit')
@@ -286,20 +304,13 @@ def handle_callback(call):
     elif action == 'add_comment':
         bot.send_message(call.message.chat.id, 'Введите комментарий:')
         bot.register_next_step_handler(call.message, handle_add_comment, contact_id)
-    
     elif action == 'edit_contact_name':
         bot.send_message(call.message.chat.id, 'Введите новое имя контакта:')
         bot.register_next_step_handler(call.message, edit_contact_name, contact_id)
     elif action == 'edit_contact_number':
         bot.send_message(call.message.chat.id, 'Введите новый номер контакта:')
         bot.register_next_step_handler(call.message, edit_contact_number, contact_id)
-    elif action == 'add_comment':
-        bot.send_message(call.message.chat.id, 'Комментарий добавлен:')
-        bot.register_next_step_handler(call.message,handle_add_comment,contact_id)
-
-
-
-
+    
     elif 'detail' in call.data:
         contact_id, action = call.data.split(':')
         contact = Contact.objects.get(id=int(contact_id))
@@ -327,12 +338,15 @@ def handle_callback(call):
             button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
             keyboard.add(button)
         bot.send_message(call.message.chat.id, f'Общая сумма: {total_credit}', reply_markup=keyboard)
+
     elif 'transaction_history' in call.data:
         user_id, action = call.data.split(':')
         chat_id = call.message.chat.id
         message = transaction_history(user_id)
         bot.send_message(chat_id=chat_id, text=message)
 
+    
+    
     elif 'history_instr' in call.data:
         contact_id, action = call.data.split(':')
         chat_id = call.message.chat.id
@@ -442,7 +456,14 @@ def handle_callback(call):
         # Отправьте клавиатуру редактирования контакта
         keyboard = edit_keyboard(contact)
         bot.send_message(call.message.chat.id, 'Редактирование контакта', reply_markup=keyboard)    
+    elif 'statistics' in call.data:
+        statistic = get_statistics(call.message)  # Здесь вызывается функция get_statistics() для получения статистики
+        if statistic:
+            bot.send_message(call.message.chat.id, statistic)
+        else:
+            bot.send_message(call.message.chat.id, 'Вам была предоставлена информация о ваших пользователях')    
 
+    
     
 
 def handle_amount_credit(
@@ -680,4 +701,35 @@ def handle_add_comment(message, transaction_id):
     print(transaction)
     transaction.save()
     print(transaction)
-    bot.send_message(message.chat.id, 'Вы добавили комментарий')        
+    bot.send_message(message.chat.id, 'Вы добавили комментарий')   
+
+
+
+@bot.message_handler(commands=['statistics'])
+def get_statistics(message):
+    total_users = User.objects.count()
+    total_transactions = Transaction.objects.count()
+    total_transaction_amount = Transaction.objects.aggregate(total_amount=Sum('amount'))['total_amount']
+    information_text = f'''
+                      Статистика:
+    Общее количество пользователей: {total_users}
+    Количество успешных транзакций: {total_transactions}
+    Общая сумма всех транзакций всех пользователей: {round(total_transaction_amount, 2)}
+    '''
+    bot.send_message(chat_id=message.chat.id, text=information_text)
+    image_url = 'https://img.freepik.com/free-photo/top-view-of-statistics-presentation-with-pie-chart_23-2149023802.jpg?w=2000&t=st=1688997456~exp=1688998056~hmac=1a80aef4bb4ed117b964c5f7ba275ea04e6607472c705be2505637cf27248cab'
+    bot.send_photo(chat_id=message.chat.id, photo=image_url)
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
