@@ -21,7 +21,7 @@ from telebot import TeleBot, types
 from loans.models import TelegramMessageId, Contact, Transaction, Notification
 from loans.bot.buttons import main_keyboard, detail_keyboard, start_keyboard, instruction_keyboard, edit_keyboard
 from loans.bot.math import calculate_total
-from loans.bot.expand import get_paginated_contacts
+from loans.bot.expand import get_paginated_contacts, get_paginated_debit, get_paginated_credit
 from loans.bot.text import my_profile, transaction_history, history, transaction_message, search_instr, add_contact_message, register_instr, add_contact_instr, history_instr
 from django.db.models import Q
 from django.http import HttpResponseBadRequest, HttpResponse
@@ -318,27 +318,89 @@ def handle_callback(call):
         history_button = types.InlineKeyboardButton("📖 История транзакций", callback_data=f"{contact_id}:history")
         keyboard.row(history_button)
         bot.send_message(call.message.chat.id, f'Контакт: {contact.name}\nНомер: {contact.number}\nМне должны: {contact.debit}\nЯ должен: {contact.credit}', reply_markup=keyboard)
-    elif 'debit' in call.data:
+
+    elif 'debit_expand' in call.data:
         user_id, action = call.data.split(':')
         contacts = Contact.objects.filter(user_id=user_id).exclude(debit=0).order_by('debit')
+        page = int(action.split('-')[1])
+        previous_page = max(0, page - 5)  # Вычисление номера предыдущей страницы
+        next_page = page + 5
+        contacts, is_last, is_first = get_paginated_debit(user_id, previous_page, 5)
         total_debit = calculate_total(user_id,'debit')
         keyboard = types.InlineKeyboardMarkup(row_width=2)
         for contact in contacts:
             contact_button = f'{contact.name}-{contact.debit}'
             button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
             keyboard.add(button)
-        bot.send_message(call.message.chat.id, f'Общая сумма: {total_debit}', reply_markup=keyboard)
-    elif 'credit' in call.data:
+        
+        if not is_first:
+            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:debit-{previous_page}')
+            keyboard.row(previous_button)  
+        if not is_last:
+            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:debit-{next_page}')
+            keyboard.row(expand_button)
+        
+        search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
+        keyboard.row(search_button)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, f'Вы перешли в раздел Мне должны\nОбщая сумма займов: {total_debit}', reply_markup=keyboard)
+
+    elif 'credit_expand' in call.data:
         user_id, action = call.data.split(':')
         contacts = Contact.objects.filter(user_id=user_id).exclude(credit=0).order_by('credit')
+        page = int(action.split('-')[1])
+        previous_page = max(0, page - 5)  # Вычисление номера предыдущей страницы
+        next_page = page + 5
+        contacts, is_last, is_first = get_paginated_credit(user_id, previous_page, 5)
         total_credit = calculate_total(user_id,'credit')
         keyboard = types.InlineKeyboardMarkup(row_width=2)
         for contact in contacts:
             contact_button = f'{contact.name}-{contact.credit}'
             button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
             keyboard.add(button)
-        bot.send_message(call.message.chat.id, f'Общая сумма: {total_credit}', reply_markup=keyboard)
+        
+        if not is_first:
+            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:credit-{previous_page}')
+            keyboard.row(previous_button)  
+        if not is_last:
+            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:credit-{next_page}')
+            keyboard.row(expand_button)
+        
+        search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
+        keyboard.row(search_button)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, f'Вы перешли в раздел Я должен\nОбщая сумма займов: {total_credit}', reply_markup=keyboard)
 
+    elif 'debit' in call.data:
+        user_id, action = call.data.split(':')
+        contacts = Contact.objects.filter(user_id=user_id).exclude(debit=0).order_by('debit')
+        total_debit = calculate_total(user_id,'debit')
+        contacts, is_last, is_first = get_paginated_debit(user_id, 0, 5)
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        for contact in contacts:
+            contact_button = f'{contact.name}-{contact.debit}'
+            button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
+            keyboard.add(button)
+        expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:debit_expand-10')
+        keyboard.row(expand_button)
+        search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
+        keyboard.row(search_button)
+        bot.send_message(call.message.chat.id, f'Вы перешли в раздел Мне должны\nОбщая сумма: {total_debit}', reply_markup=keyboard)
+    elif 'credit' in call.data:
+        user_id, action = call.data.split(':')
+        contacts = Contact.objects.filter(user_id=user_id).exclude(credit=0).order_by('credit')
+        contacts, is_last, is_first = get_paginated_credit(user_id, 0, 5)
+        total_credit = calculate_total(user_id,'credit')
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        for contact in contacts:
+            contact_button = f'{contact.name}-{contact.credit}'
+            button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
+            keyboard.add(button)
+        expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:credit_expand-10')
+        keyboard.row(expand_button)
+        search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
+        keyboard.row(search_button)
+        bot.send_message(call.message.chat.id, f'Вы перешли в раздел Я должен\nОбщая сумма займов: {total_credit}', reply_markup=keyboard)
     elif 'transaction_history' in call.data:
         user_id, action = call.data.split(':')
         chat_id = call.message.chat.id
