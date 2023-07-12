@@ -12,19 +12,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
 
-
-
 import webbrowser
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
 
-
 from loans.models import User, Transaction
-
-
-
-
-
 
 from telebot import TeleBot, types
 from loans.models import TelegramMessageId, Contact, Transaction, Notification
@@ -108,12 +100,7 @@ def handle_command1(message):
         image_url = 'https://img.freepik.com/free-photo/top-view-welcome-back-message-with-coffee-cup_23-2150462103.jpg?w=900&t=st=1688083434~exp=1688084034~hmac=9f84a0b1d4a222d567d8fc538cf81f070ddc5ebd64e31435513a59f695519ac3'
         bot.send_photo(chat_id=message.chat.id, photo=image_url)
         bot.send_message(message.chat.id, f'Вы уже зарегистрированы как {username}.', reply_markup=main_keyboard())
-        # bot.send_message(message.chat.id, "Вы перешли на главное меню", reply_markup=main_keyboard())
-        # is_logged_in = user.is_logged_in 
-        # if is_logged_in:
-        #     bot.send_message(message.chat.id, "Вы уже вошли в систему.", reply_markup=main_keyboard())
         
-
 user_states = {}
 
 
@@ -350,10 +337,10 @@ def handle_callback(call):
             keyboard.add(button)
         
         if not is_first:
-            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:debit-{previous_page}')
+            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:debit_expand-{previous_page}')
             keyboard.row(previous_button)  
         if not is_last:
-            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:debit-{next_page}')
+            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:debit_expand-{next_page}')
             keyboard.row(expand_button)
         
         search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
@@ -376,10 +363,10 @@ def handle_callback(call):
             keyboard.add(button)
         
         if not is_first:
-            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:credit-{previous_page}')
+            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:credit_expand-{previous_page}')
             keyboard.row(previous_button)  
         if not is_last:
-            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:credit-{next_page}')
+            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:credit_expand-{next_page}')
             keyboard.row(expand_button)
         
         search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
@@ -761,7 +748,7 @@ def confirm_delete_contact(message, contact_id):
             contact.delete()
             bot.send_message(chat_id=user_id, text='Контакт успешно удален.')
     else:
-        bot.send_message(chat_id=user_id, text='Пожалуйста, отправьте "Да" или "Нет" для подтверждения действия.')
+        bot.send_message(chat_id=user_id, text='Пожалуйста, отправьте "Да/Yes" или "Нет/No" для подтверждения действия.')
 
 
 def edit_contact_number(message, contact_id):
@@ -781,8 +768,6 @@ def handle_add_comment(message, transaction_id):
     transaction.save()
     print(transaction)
     bot.send_message(message.chat.id, 'Вы добавили комментарий')   
-
-
 
 @bot.message_handler(commands=['statistics'])
 def get_statistics(message, user_id):
