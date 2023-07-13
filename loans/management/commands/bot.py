@@ -327,6 +327,11 @@ def handle_callback(call):
         history_button = types.InlineKeyboardButton("📖 История транзакций", callback_data=f"{contact_id}:history")
         keyboard.row(history_button)
         bot.send_message(call.message.chat.id, f'Контакт: {contact.name}\nНомер: {contact.number}\nМне должны: {contact.debit}\nЯ должен: {contact.credit}', reply_markup=keyboard)
+        if contact.photo:
+                # Отправляем фотографию контакта вместе с текстом деталей
+                photo_data = BytesIO(contact.photo.read())
+                photo_data.seek(0)
+                bot.send_photo(chat_id=call.message.chat.id, photo=photo_data, caption='Фотография контакта:')
 
     elif 'debit_expand' in call.data:
         user_id, action = call.data.split(':')
