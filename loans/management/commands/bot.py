@@ -16,19 +16,19 @@ from PIL import Image
 import tempfile
 import os
 
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
+
+import webbrowser
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, CallbackContext
 
 from loans.models import User, Transaction
-
-
-
-
-
 
 from telebot import TeleBot, types
 from loans.models import TelegramMessageId, Contact, Transaction, Notification
 from loans.bot.buttons import main_keyboard, detail_keyboard, start_keyboard, instruction_keyboard, edit_keyboard
 from loans.bot.math import calculate_total
-from loans.bot.expand import get_paginated_contacts
+from loans.bot.expand import get_paginated_contacts, get_paginated_debit, get_paginated_credit
 from loans.bot.text import my_profile, transaction_history, history, transaction_message, search_instr, add_contact_message, register_instr, add_contact_instr, history_instr
 from django.db.models import Q
 from django.http import HttpResponseBadRequest, HttpResponse
@@ -42,7 +42,7 @@ from telebot.types import (
     ReplyKeyboardRemove,
 )
 import users
-
+import os
 
 User = get_user_model()
 
@@ -106,13 +106,9 @@ def handle_command1(message):
         image_url = 'https://img.freepik.com/free-photo/top-view-welcome-back-message-with-coffee-cup_23-2150462103.jpg?w=900&t=st=1688083434~exp=1688084034~hmac=9f84a0b1d4a222d567d8fc538cf81f070ddc5ebd64e31435513a59f695519ac3'
         bot.send_photo(chat_id=message.chat.id, photo=image_url)
         bot.send_message(message.chat.id, f'Вы уже зарегистрированы как {username}.', reply_markup=main_keyboard())
-        # bot.send_message(message.chat.id, "Вы перешли на главное меню", reply_markup=main_keyboard())
-        # is_logged_in = user.is_logged_in 
-        # if is_logged_in:
-        #     bot.send_message(message.chat.id, "Вы уже вошли в систему.", reply_markup=main_keyboard())
         
-
 user_states = {}
+
 
 
 def get_user_state(chat_id):
@@ -218,14 +214,20 @@ def handle_contact(message):
             number=contact.phone_number,
             user=user
         )  
+    
+
         keyboard = types.InlineKeyboardMarkup()
         borrow_button = types.InlineKeyboardButton(text='Дать займ', callback_data=f'{saved_contact.id}:borrow')
         lend_button = types.InlineKeyboardButton(text='Взять займ', callback_data=f'{saved_contact.id}:lend')
         keyboard.row(borrow_button, lend_button)          
         bot.send_message(message.chat.id, 'Создан новый контакт:')
-        bot.send_message(message.chat.id, f'Имя: {saved_contact.name}\nНомер: {saved_contact.number}', reply_markup=keyboard)
+        bot.send_photo(message.chat.id, caption=f'Имя: {saved_contact.name}\nНомер: {saved_contact.number}', reply_markup=keyboard)
+
     except User.DoesNotExist:
         bot.send_message(message.chat.id, "Вы не авторизованы")
+
+ 
+
 @bot.message_handler()
 def handle_message (message):
     try:
@@ -255,9 +257,10 @@ def handle_message (message):
             keyboard.add(credit_button)
             history_button = types.InlineKeyboardButton(text='📖 История транзакций', callback_data=f'{user.id}:transaction_history')
             keyboard.add(history_button)
-            statistik_button = types.InlineKeyboardButton(text='Статистика', callback_data=f'{user.id}:statistics')  
+            statistik_button = types.InlineKeyboardButton(text='📊  Статистика', callback_data=f'{user.id}:statistics')  
             keyboard.add(statistik_button)
             bot.send_message(message.chat.id, 'Дополнительные действия:', reply_markup=keyboard)
+            
 
         if message.text == '🔍 Быстрый поиск':
             keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -284,7 +287,6 @@ def handle_callback(call):
     user_id = call.message.chat.id
     print (call.data)
 
-    
     if action == 'borrow':
         bot.send_message(call.message.chat.id, 'Введите сумму займа:')
         bot.register_next_step_handler(call.message, handle_amount_credit, contact_id, 'borrow', 'долг', 'credit')
@@ -325,6 +327,59 @@ def handle_callback(call):
         history_button = types.InlineKeyboardButton("📖 История транзакций", callback_data=f"{contact_id}:history")
         keyboard.row(history_button)
         bot.send_message(call.message.chat.id, f'Контакт: {contact.name}\nНомер: {contact.number}\nМне должны: {contact.debit}\nЯ должен: {contact.credit}', reply_markup=keyboard)
+
+    elif 'debit_expand' in call.data:
+        user_id, action = call.data.split(':')
+        contacts = Contact.objects.filter(user_id=user_id).exclude(debit=0).order_by('debit')
+        page = int(action.split('-')[1])
+        previous_page = max(0, page - 5)  # Вычисление номера предыдущей страницы
+        next_page = page + 5
+        contacts, is_last, is_first = get_paginated_debit(user_id, previous_page, 5)
+        total_debit = calculate_total(user_id,'debit')
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        for contact in contacts:
+            contact_button = f'{contact.name}-{contact.debit}'
+            button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
+            keyboard.add(button)
+        
+        if not is_first:
+            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:debit_expand-{previous_page}')
+            keyboard.row(previous_button)  
+        if not is_last:
+            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:debit_expand-{next_page}')
+            keyboard.row(expand_button)
+        
+        search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
+        keyboard.row(search_button)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, f'Вы перешли в раздел Мне должны\nОбщая сумма займов: {total_debit}', reply_markup=keyboard)
+
+    elif 'credit_expand' in call.data:
+        user_id, action = call.data.split(':')
+        contacts = Contact.objects.filter(user_id=user_id).exclude(credit=0).order_by('credit')
+        page = int(action.split('-')[1])
+        previous_page = max(0, page - 5)  # Вычисление номера предыдущей страницы
+        next_page = page + 5
+        contacts, is_last, is_first = get_paginated_credit(user_id, previous_page, 5)
+        total_credit = calculate_total(user_id,'credit')
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        for contact in contacts:
+            contact_button = f'{contact.name}-{contact.credit}'
+            button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
+            keyboard.add(button)
+        
+        if not is_first:
+            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:credit_expand-{previous_page}')
+            keyboard.row(previous_button)  
+        if not is_last:
+            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:credit_expand-{next_page}')
+            keyboard.row(expand_button)
+        
+        search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
+        keyboard.row(search_button)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, f'Вы перешли в раздел Я должен\nОбщая сумма займов: {total_credit}', reply_markup=keyboard)
+
         if contact.photo:
                 # Отправляем фотографию контакта вместе с текстом деталей
                 photo_data = BytesIO(contact.photo.read())
@@ -338,23 +393,32 @@ def handle_callback(call):
         user_id, action = call.data.split(':')
         contacts = Contact.objects.filter(user_id=user_id).exclude(debit=0).order_by('debit')
         total_debit = calculate_total(user_id,'debit')
+        contacts, is_last, is_first = get_paginated_debit(user_id, 0, 5)
         keyboard = types.InlineKeyboardMarkup(row_width=2)
         for contact in contacts:
             contact_button = f'{contact.name}-{contact.debit}'
             button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
             keyboard.add(button)
-        bot.send_message(call.message.chat.id, f'Общая сумма: {total_debit}', reply_markup=keyboard)
+        expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:debit_expand-10')
+        keyboard.row(expand_button)
+        search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
+        keyboard.row(search_button)
+        bot.send_message(call.message.chat.id, f'Вы перешли в раздел Мне должны\nОбщая сумма: {total_debit}', reply_markup=keyboard)
     elif 'credit' in call.data:
         user_id, action = call.data.split(':')
         contacts = Contact.objects.filter(user_id=user_id).exclude(credit=0).order_by('credit')
+        contacts, is_last, is_first = get_paginated_credit(user_id, 0, 5)
         total_credit = calculate_total(user_id,'credit')
         keyboard = types.InlineKeyboardMarkup(row_width=2)
         for contact in contacts:
             contact_button = f'{contact.name}-{contact.credit}'
             button = types.InlineKeyboardButton(text=contact_button, callback_data=f"{contact.id}:detail")
             keyboard.add(button)
-        bot.send_message(call.message.chat.id, f'Общая сумма: {total_credit}', reply_markup=keyboard)
-
+        expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:credit_expand-10')
+        keyboard.row(expand_button)
+        search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
+        keyboard.row(search_button)
+        bot.send_message(call.message.chat.id, f'Вы перешли в раздел Я должен\nОбщая сумма займов: {total_credit}', reply_markup=keyboard)
     elif 'transaction_history' in call.data:
         user_id, action = call.data.split(':')
         chat_id = call.message.chat.id
@@ -404,7 +468,7 @@ def handle_callback(call):
             chat_id=call.message.chat.id,
             message_id=sent_message.message_id,
             action='add_contact',)
-
+   
     elif 'register_instr' in call.data:
         user_id, action = call.data.split(':')
         chat_id = call.message.chat.id
@@ -476,7 +540,7 @@ def handle_callback(call):
         contact_id, action = call.data.split(':')
         delete_photo(contact_id, call.message)     
     elif 'statistics' in call.data:
-        statistic = get_statistics(call.message)  # Здесь вызывается функция get_statistics() для получения статистики
+        statistic = get_statistics(call.message,user_id)  # Здесь вызывается функция get_statistics() для получения статистики
         if statistic:
             bot.send_message(call.message.chat.id, statistic)
         else:
@@ -705,7 +769,7 @@ def confirm_delete_contact(message, contact_id):
             contact.delete()
             bot.send_message(chat_id=user_id, text='Контакт успешно удален.')
     else:
-        bot.send_message(chat_id=user_id, text='Пожалуйста, отправьте "Да" или "Нет" для подтверждения действия.')
+        bot.send_message(chat_id=user_id, text='Пожалуйста, отправьте "Да/Yes" или "Нет/No" для подтверждения действия.')
 
 
 def edit_contact_number(message, contact_id):
@@ -726,22 +790,65 @@ def handle_add_comment(message, transaction_id):
     print(transaction)
     bot.send_message(message.chat.id, 'Вы добавили комментарий')   
 
-
-
 @bot.message_handler(commands=['statistics'])
-def get_statistics(message):
-    total_users = User.objects.count()
-    total_transactions = Transaction.objects.count()
-    total_transaction_amount = Transaction.objects.aggregate(total_amount=Sum('amount'))['total_amount']
+def get_statistics(message, user_id):
+    total_contacts=Contact.objects.filter(user__chat_id=user_id).count()
+    total_transactions = Transaction.objects.filter(contact__user__chat_id=user_id).count()
+    total_transaction_amount = Transaction.objects.filter(contact__user__chat_id=user_id).aggregate(total_amount=Sum('amount'))['total_amount']
+    
+    if total_transaction_amount is None:
+        total_transaction_amount = 0
+
+    
     information_text = f'''
                       Статистика:
-    Общее количество пользователей: {total_users}
+    Общее количество контактов:  {total_contacts}
     Количество успешных транзакций: {total_transactions}
-    Общая сумма всех транзакций всех пользователей: {round(total_transaction_amount, 2)}
+    Общая сумма всех транзакций всех пользователей:{round(total_transaction_amount, 2)}
     '''
     bot.send_message(chat_id=message.chat.id, text=information_text)
     image_url = 'https://img.freepik.com/free-photo/top-view-of-statistics-presentation-with-pie-chart_23-2149023802.jpg?w=2000&t=st=1688997456~exp=1688998056~hmac=1a80aef4bb4ed117b964c5f7ba275ea04e6607472c705be2505637cf27248cab'
     bot.send_photo(chat_id=message.chat.id, photo=image_url)
+
+
+
+def save_photo(message, contact_id):
+    try:
+        contact = Contact.objects.get(id=contact_id)
+        photo = message.photo[-1]  # Получаем последнюю отправленную фотографию
+        file_id = photo.file_id
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        # Сохраняем фотографию на сервере
+        file_extension = file_info.file_path.split('.')[-1]
+        photo_path = f'contact_photos/{contact_id}.{file_extension}'
+        with open(photo_path, 'wb') as new_file:
+            new_file.write(downloaded_file)
+        # Сохраняем путь к фотографии в модели Contact
+        contact.photo = photo_path
+        contact.save()
+        bot.send_message(message.chat.id, 'Фотография успешно сохранена')
+    except Contact.DoesNotExist:
+        bot.send_message(message.chat.id, 'Контакт не найден')
+
+def delete_photo(contact_id, message):
+    try:
+        contact = Contact.objects.get(id=contact_id)
+        if contact.photo:
+            # Удаляем файл фотографии с диска
+            photo_path = contact.photo.path
+            os.remove(photo_path)
+            # Сбрасываем поле фотографии в модели Contact
+            contact.photo = None
+            contact.save()
+            bot.send_message(message.chat.id, 'Фотография успешно удалена')
+        else:
+            bot.send_message(message.chat.id, 'Фотография не найдена')
+    except Contact.DoesNotExist:
+        bot.send_message(message.chat.id, 'Контакт не найден')        
+
+
+
 
 
 

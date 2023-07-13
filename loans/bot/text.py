@@ -1,6 +1,7 @@
 from .math import calculate_total
 from users.models import User
 from loans.models import Transaction
+from telebot import TeleBot, types
 
 def my_profile(user_id):
     debit_total = calculate_total(user_id, 'debit')
