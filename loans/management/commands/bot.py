@@ -1,31 +1,15 @@
+from asyncore import dispatcher
 from datetime import timedelta
 from functools import partial
-from gettext import translation
+from os import path
 from django.core.management.base import BaseCommand
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 from django.db.models import Sum
-from users.models import User
-from django.contrib.auth.models import User
-
-from django.core.files.base import ContentFile
 from io import BytesIO
-from telegram import InputFile
-
-import tempfile
-import os
-
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
-
-import webbrowser
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
-
 from loans.models import User, Transaction
-
 from telebot import TeleBot, types
-from loans.models import TelegramMessageId, Contact, Transaction, Notification
+from loans.models import TelegramMessageId, Contact, Transaction, Notification, UserSupportMessage
 from loans.bot.buttons import main_keyboard, detail_keyboard, start_keyboard, instruction_keyboard, edit_keyboard
 from loans.bot.math import calculate_total
 from loans.bot.expand import get_paginated_contacts, get_paginated_debit, get_paginated_credit
@@ -34,7 +18,6 @@ from django.db.models import Q
 from django.http import HttpResponseBadRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import telebot
-import re
 
 from telebot.types import (
     ReplyKeyboardMarkup,
@@ -251,17 +234,18 @@ def handle_message (message):
             answer_message = my_profile(user.id)
             bot.send_message(message.chat.id, answer_message)
             keyboard = types.InlineKeyboardMarkup()
-            debit_button = types.InlineKeyboardButton(text=f'Мне должны', callback_data=f'{user.id}:debit')
+            debit_button = types.InlineKeyboardButton(text='Мне должны', callback_data=f'{user.id}:debit')
             keyboard.add(debit_button)
-            credit_button = types.InlineKeyboardButton (text=f'Я должен', callback_data=f'{user.id}:credit')
+            credit_button = types.InlineKeyboardButton(text='Я должен', callback_data=f'{user.id}:credit')
             keyboard.add(credit_button)
             history_button = types.InlineKeyboardButton(text='📖 История транзакций', callback_data=f'{user.id}:transaction_history')
             keyboard.add(history_button)
             statistik_button = types.InlineKeyboardButton(text='📊  Статистика', callback_data=f'{user.id}:statistics')  
             keyboard.add(statistik_button)
+            settings_button = types.InlineKeyboardButton(text='⚙️ Настройки', callback_data=f'{user.id}:settings')
+            keyboard.add(settings_button)
             bot.send_message(message.chat.id, 'Дополнительные действия:', reply_markup=keyboard)
             
-
         if message.text == '🔍 Быстрый поиск':
             keyboard = types.InlineKeyboardMarkup(row_width=2)
             debit_button = types.InlineKeyboardButton(text=f'Мне должны', callback_data=f'{user.id}:debit')
@@ -286,6 +270,7 @@ def handle_callback(call):
     action = callback_data[1]
     user_id = call.message.chat.id
     print (call.data)
+
 
     if action == 'borrow':
         bot.send_message(call.message.chat.id, 'Введите сумму займа:')
@@ -319,7 +304,21 @@ def handle_callback(call):
     elif action == 'edit_contact_number':
         bot.send_message(call.message.chat.id, 'Введите новый номер контакта:')
         bot.register_next_step_handler(call.message, edit_contact_number, contact_id)
-    
+    elif action == 'add_comment':
+        bot.send_message(call.message.chat.id, 'Комментарий добавлен:')
+        bot.register_next_step_handler(call.message,handle_add_comment,contact_id)
+    elif action == 'settings':
+        user_id = contact_id
+        bot.send_message(call.message.chat.id, 'Выберите одну из опций настроек:')
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        support_button = types.InlineKeyboardButton(text='Техподдержка', callback_data=f'{user_id}:support')
+        keyboard.add(support_button)
+        bot.send_message(call.message.chat.id, 'Доступные настройки:', reply_markup=keyboard)
+    elif action == 'support':
+        support_message = "Пожалуйста, опишите вашу проблему или вопрос для техподдержки."
+        bot.send_message(call.message.chat.id, support_message)
+        bot.register_next_step_handler(call.message, send_user_message_to_support_group)
+
     elif 'detail' in call.data:
         contact_id, action = call.data.split(':')
         contact = Contact.objects.get(id=int(contact_id))
@@ -545,13 +544,55 @@ def handle_callback(call):
             bot.send_message(call.message.chat.id, statistic)
         else:
             bot.send_message(call.message.chat.id, 'Вам была предоставлена информация о ваших пользователях')    
+        bot.send_message(call.message.chat.id, 'Редактирование контакта', reply_markup=keyboard)    
 
     elif 'add_photo' in call.data:
          bot.send_message(call.message.chat.id, 'Пришлите фотографию для сохранения')
          bot.register_next_step_handler(call.message, save_photo, contact_id)        
 
-    
-    
+def send_user_message_to_support_group(message):
+    group_chat_id = -1001842356641
+    support_message = (
+        f"""Новое сообщение для техподдержки от пользователя 
+{message.from_user.username}:
+{message.text}"""
+    )
+
+    sent_message = bot.send_message(
+        group_chat_id,
+        support_message
+    )
+    user_support_message = UserSupportMessage(
+    chat_id=message.chat.id,
+    message_text=message.text,
+    message_id=sent_message.message_id
+)
+    user_support_message.save()
+    bot.register_next_step_handler(sent_message, process_support_reply)
+    bot.send_message(
+        message.chat.id,
+        """Сообщение успешно отправлено в техподдержку.
+Спасибо за обращение!"""
+    )
+
+def process_support_reply(message):
+    # Проверка наличия соответствующего сообщения в базе данных
+    user_support_message = UserSupportMessage.objects.filter(message_id=message.reply_to_message.message_id).first()
+    if user_support_message:
+        # Извлечение chat_id пользователя из базы данных
+        user_chat_id = user_support_message.chat_id
+
+        # Отправка ответа пользователю
+        reply_message = f"Ответ от техподдержки:\n{message.text}"
+        bot.send_message(
+            chat_id=user_chat_id,
+            text=reply_message
+        )
+    else:
+        bot.send_message(
+            chat_id=message.chat.id,
+            text="К сожалению, не удалось найти соответствующее сообщение в базе данных."
+        )
 
 def handle_amount_credit(
         message, 
@@ -800,7 +841,6 @@ def handle_add_comment(message, transaction_id):
     transaction.comment = comment
     print(transaction)
     transaction.save()
-    print(transaction)
     bot.send_message(message.chat.id, 'Вы добавили комментарий')   
 
 @bot.message_handler(commands=['statistics'])

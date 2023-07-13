@@ -66,3 +66,8 @@ class Notification(models.Model):
             # Вычисляем дату погашения на основе текущей даты и срока погашения транзакции
             self.repayment_date = timezone.now().date() + timedelta(days=self.transaction.contact.days)
         super().save(*args, **kwargs)    
+
+class UserSupportMessage(models.Model):
+    chat_id = models.IntegerField()
+    message_text = models.TextField()
+    message_id = models.IntegerField()

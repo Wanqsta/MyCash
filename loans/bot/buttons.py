@@ -52,3 +52,8 @@ def edit_keyboard(contact):
     keyboard.add(edit_number)
     return keyboard
 
+def settings_keyboard(user):
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    support_button = types.InlineKeyboardButton(text='🛠️ Техподдержка', callback_data=f'{user.id}:support')
+    keyboard.add(support_button)
+    return keyboard
