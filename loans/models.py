@@ -13,6 +13,7 @@ class Contact(models.Model):
     name = models.CharField(max_length=45)
     number = models.CharField(max_length=15)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    photo = models.ImageField(upload_to='contact_photos/', blank=True, null=True)
     debit = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     credit = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 

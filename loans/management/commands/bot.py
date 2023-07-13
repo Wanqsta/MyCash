@@ -9,6 +9,13 @@ from django.db.models import Sum
 from users.models import User
 from django.contrib.auth.models import User
 
+from django.core.files.base import ContentFile
+from io import BytesIO
+from telegram import InputFile
+from PIL import Image
+import tempfile
+import os
+
 
 from loans.models import User, Transaction
 
@@ -318,6 +325,15 @@ def handle_callback(call):
         history_button = types.InlineKeyboardButton("📖 История транзакций", callback_data=f"{contact_id}:history")
         keyboard.row(history_button)
         bot.send_message(call.message.chat.id, f'Контакт: {contact.name}\nНомер: {contact.number}\nМне должны: {contact.debit}\nЯ должен: {contact.credit}', reply_markup=keyboard)
+        if contact.photo:
+                # Отправляем фотографию контакта вместе с текстом деталей
+                photo_data = BytesIO(contact.photo.read())
+                photo_data.seek(0)
+                bot.send_photo(chat_id=call.message.chat.id, photo=photo_data, caption='Фотография контакта:')
+       
+        
+         
+        
     elif 'debit' in call.data:
         user_id, action = call.data.split(':')
         contacts = Contact.objects.filter(user_id=user_id).exclude(debit=0).order_by('debit')
@@ -455,13 +471,20 @@ def handle_callback(call):
         contact = Contact.objects.get(id=int(contact_id))
         # Отправьте клавиатуру редактирования контакта
         keyboard = edit_keyboard(contact)
-        bot.send_message(call.message.chat.id, 'Редактирование контакта', reply_markup=keyboard)    
+        bot.send_message(call.message.chat.id, 'Редактирование контакта', reply_markup=keyboard)  
+    elif 'delete_photo' in call.data:
+        contact_id, action = call.data.split(':')
+        delete_photo(contact_id, call.message)     
     elif 'statistics' in call.data:
         statistic = get_statistics(call.message)  # Здесь вызывается функция get_statistics() для получения статистики
         if statistic:
             bot.send_message(call.message.chat.id, statistic)
         else:
             bot.send_message(call.message.chat.id, 'Вам была предоставлена информация о ваших пользователях')    
+
+    elif 'add_photo' in call.data:
+         bot.send_message(call.message.chat.id, 'Пришлите фотографию для сохранения')
+         bot.register_next_step_handler(call.message, save_photo, contact_id)        
 
     
     
@@ -722,10 +745,40 @@ def get_statistics(message):
 
 
 
+def save_photo(message, contact_id):
+    try:
+        contact = Contact.objects.get(id=contact_id)
+        photo = message.photo[-1]  # Получаем последнюю отправленную фотографию
+        file_id = photo.file_id
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        # Сохраняем фотографию на сервере
+        file_extension = file_info.file_path.split('.')[-1]
+        photo_path = f'contact_photos/{contact_id}.{file_extension}'
+        with open(photo_path, 'wb') as new_file:
+            new_file.write(downloaded_file)
+        # Сохраняем путь к фотографии в модели Contact
+        contact.photo = photo_path
+        contact.save()
+        bot.send_message(message.chat.id, 'Фотография успешно сохранена')
+    except Contact.DoesNotExist:
+        bot.send_message(message.chat.id, 'Контакт не найден')
 
-
-
-
+def delete_photo(contact_id, message):
+    try:
+        contact = Contact.objects.get(id=contact_id)
+        if contact.photo:
+            # Удаляем файл фотографии с диска
+            photo_path = contact.photo.path
+            os.remove(photo_path)
+            # Сбрасываем поле фотографии в модели Contact
+            contact.photo = None
+            contact.save()
+            bot.send_message(message.chat.id, 'Фотография успешно удалена')
+        else:
+            bot.send_message(message.chat.id, 'Фотография не найдена')
+    except Contact.DoesNotExist:
+        bot.send_message(message.chat.id, 'Контакт не найден')        
 
 
 
