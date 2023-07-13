@@ -12,7 +12,7 @@ from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from io import BytesIO
 from telegram import InputFile
-from PIL import Image
+
 import tempfile
 import os
 
@@ -706,13 +706,26 @@ def create_contact(message, user_id):
         number = number[1:]
     try:
         user = User.objects.get(chat_id=user_id)
+
+
+        existing_contact = Contact.objects.filter(user=user, number=number).first()
+        if existing_contact:
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            button = types.InlineKeyboardButton(text=existing_contact.name, callback_data=f"{existing_contact.id}:detail")
+            keyboard.add(button)
+            
+            bot.send_message(message.chat.id, 'Контакт с таким номером уже существует:', reply_markup=keyboard)
+    
+            return
+
+
         contact = Contact.objects.create(name=name, number=number, user=user)
         keyboard = types.InlineKeyboardMarkup()
         borrow_button = types.InlineKeyboardButton(text='Дать займ', callback_data=f'{contact.id}:borrow')
         lend_button = types.InlineKeyboardButton(text='Взять займ', callback_data=f'{contact.id}:lend')
         keyboard.row(borrow_button, lend_button)
         bot.send_message(message.chat.id, 'Создан новый контакт:')
-        bot.send_message(message.chat.id, f'Имя: {contact.name}\nНомер: {contact.number}', reply_markup=keyboard)
+        bot.send_message(message.chat.id, f'Имя: {contact.name}\nНомер: {contact.number}', reply_markup=keyboard) 
     except User.DoesNotExist:
         bot.send_message(message.chat.id, "Вы не авторизованы")
 
