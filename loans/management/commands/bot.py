@@ -28,7 +28,7 @@ from telebot import TeleBot, types
 from loans.models import TelegramMessageId, Contact, Transaction, Notification
 from loans.bot.buttons import main_keyboard, detail_keyboard, start_keyboard, instruction_keyboard, edit_keyboard
 from loans.bot.math import calculate_total
-from loans.bot.expand import get_paginated_contacts, get_paginated_debit, get_paginated_credit
+from loans.bot.expand import get_paginated_contacts, get_paginated_debit, get_paginated_credit, get_paginated_transaction, get_paginated_history
 from loans.bot.text import my_profile, transaction_history, history, transaction_message, search_instr, add_contact_message, register_instr, add_contact_instr, history_instr
 from django.db.models import Q
 from django.http import HttpResponseBadRequest, HttpResponse
@@ -74,7 +74,6 @@ def send_notification(chat_id, text):
         chat_id=chat_id,
         text=text
     )
-
 class Command(BaseCommand):
     help = 'MyCash'
 
@@ -424,27 +423,88 @@ def handle_callback(call):
         search_button = types.InlineKeyboardButton(text='🔍 Поиск', callback_data=f'{user_id}:search')
         keyboard.row(search_button)
         bot.send_message(call.message.chat.id, f'Вы перешли в раздел Я должен\nОбщая сумма займов: {total_credit}', reply_markup=keyboard)
+    
+    elif 'transaction_expand' in call.data:
+        user_id, action = call.data.split(':')
+        page = int(action.split('-')[1])
+        previous_page = max(0, page - 5)  # Вычисление номера предыдущей страницы
+        next_page = page + 5
+        transactions, is_last, is_first = get_paginated_transaction(user_id, previous_page, 5)
+        print(transactions)
+        history_message = "📖 История транзакций:\n"
+        for transaction in transactions:
+            created_formatted = transaction.created.strftime('%Y-%m-%d %H:%M')
+            history_message += f"Контакт: {transaction.contact}\nТип транзакции: {transaction.transaction_type}\nКомментарий: {transaction.comment}\nСумма: {transaction.amount}\nДата: {created_formatted}\n\n"
+
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        if not is_first:
+            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{user_id}:transaction_expand-{previous_page}')
+            keyboard.row(previous_button)  
+        if not is_last:
+            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:transaction_expand-{next_page}')
+            keyboard.row(expand_button)
+
+        bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        bot.send_message(chat_id=call.message.chat.id, text=history_message, reply_markup=keyboard)
+
     elif 'transaction_history' in call.data:
         user_id, action = call.data.split(':')
-        chat_id = call.message.chat.id
-        message = transaction_history(user_id)
-        bot.send_message(chat_id=chat_id, text=message)
+        print(user_id, 0, 5)
+        transactions, is_last, is_first = get_paginated_transaction(user_id, 0, 5)
 
-    
-    
+        history_message = "📖 История транзакций:\n"
+        for transaction in transactions:
+            created_formatted = transaction.created.strftime('%Y-%m-%d %H:%M')
+            history_message += f"Контакт: {transaction.contact}\nТип транзакции: {transaction.transaction_type}\nКомментарий: {transaction.comment}\nСумма: {transaction.amount}\nДата: {created_formatted}\n\n"
+
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        next_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{user_id}:transaction_expand-10')
+        keyboard.row(next_button)
+
+        bot.send_message(chat_id=call.message.chat.id, text=history_message, reply_markup=keyboard)
+
+    elif 'history_expand' in call.data:
+        contact_id, action = call.data.split(':')
+        page = int(action.split('-')[1])
+        previous_page = max(0, page - 5)  # Вычисление номера предыдущей страницы
+        next_page = page + 5
+        transactions, is_last, is_first = get_paginated_history(contact_id, previous_page, 5)
+        history_message = "📖 История транзакций:\n" 
+        for transaction in transactions:
+            created_formatted = transaction.created.strftime('%Y-%m-%d %H:%M')
+            history_message += f"Тип транзакции: {transaction.transaction_type}\nКомментарий:{transaction.comment}\nСумма: {transaction.amount}\nДата: {created_formatted}\n\n"
+
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        if not is_first:
+            previous_button = types.InlineKeyboardButton(text='<<<<', callback_data=f'{contact_id}:history_expand-{previous_page}')
+            keyboard.row(previous_button)  
+        if not is_last:
+            expand_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{contact_id}:history_expand-{next_page}')
+            keyboard.row(expand_button)
+
+        bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        bot.send_message(chat_id=call.message.chat.id, text=history_message, reply_markup=keyboard)
+
     elif 'history_instr' in call.data:
         contact_id, action = call.data.split(':')
         chat_id = call.message.chat.id
-        message = history_instr
         image_url = 'https://sputnik.kg/img/07e4/0c/17/1050869481_0:0:2752:1548_1920x0_80_0_0_68b6f91f5d1cf51ee72b3dbd722bba30.jpg'
         bot.send_photo(chat_id=chat_id, photo=image_url)
-        bot.send_message(call.message.chat.id, text=message)
+        bot.send_message(chat_id=call.message.chat.id)
         
     elif 'history' in call.data:
         contact_id, action = call.data.split(':')
-        chat_id = call.message.chat.id
-        message = history(contact_id)
-        bot.send_message(call.message.chat.id, text=message)
+        transactions, is_last, is_first = get_paginated_history(contact_id, 0, 5)
+
+        history_message = "📖 История транзакций:\n" 
+        for transaction in transactions:
+            created_formatted = transaction.created.strftime('%Y-%m-%d %H:%M')
+            history_message += f"Тип транзакции: {transaction.transaction_type}\nКомментарий:{transaction.comment}\nСумма: {transaction.amount}\nДата: {created_formatted}\n\n"
+        
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        next_button = types.InlineKeyboardButton(text='>>>>', callback_data=f'{contact_id}:history_expand-10')
+        keyboard.row(next_button)
+        bot.send_message(chat_id=call.message.chat.id, text=history_message, reply_markup=keyboard)
     
     elif 'new_transaction_instr' in call.data:
         user_id, action = call.data.split(':')
