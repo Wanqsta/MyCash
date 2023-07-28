@@ -1,7 +1,10 @@
 from .math import calculate_total
 from users.models import User
 from loans.models import Transaction
+from django.conf import settings
 from telebot import TeleBot, types
+
+bot = TeleBot(settings.TELEGRAM_TOKEN, threaded=False)
 
 def my_profile(user_id):
     debit_total = calculate_total(user_id, 'debit')
@@ -20,8 +23,8 @@ add_contact_message = '''Для добавления нового контакт
 
 def transaction_history(user_id):
     transactions = Transaction.objects.filter(contact__user_id=user_id).order_by('-created')
+    history_message = "📖 История транзакций:\n"
     if transactions.exists():
-        history_message = "📖 История транзакций:\n"
         for transaction in transactions:
             created_formatted = transaction.created.strftime('%Y-%m-%d %H:%M')
             history_message += f"Контакт: {transaction.contact}\nТип транзакции: {transaction.transaction_type}\nКомментарий:{transaction.comment}\nСумма: {transaction.amount}\nДата: {created_formatted}\n\n"
@@ -29,6 +32,7 @@ def transaction_history(user_id):
         history_message = "У вас еще нет транзакций."
 
     return history_message
+
 
 from datetime import datetime
 
